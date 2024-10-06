@@ -1,3 +1,4 @@
+
 #include <WinSock2.h>
 #include <ws2tcpip.h>
 
@@ -17,13 +18,15 @@
 
 #pragma comment(lib, "Ws2_32.lib")
 
-std::unordered_map<std::string, std::vector<SOCKET>> chatRooms;  // Чаты с клиентами
+std::unordered_map<std::string, std::vector<SOCKET>> chatRooms;
 std::mutex chatRoomsMutex;
 
 using namespace std;
 
+std::string chatID;
+
 void loadChatID() {
-  ifstream file("C:/Game Downloads/BankProject/Server/IDES.txt");
+  ifstream file("IDES.txt");
   string ID;
   while (getline(file, ID)) {
     chatRooms[ID];
@@ -32,7 +35,7 @@ void loadChatID() {
 }
 
 void changeChatIDInFile(string& oldID, string& newID) {
-  const string path = "C:/Game Downloads/BankProject/Server/IDES.txt";
+  const string path = "IDES.txt";
   vector<string> ides;
   string line;
 
@@ -60,12 +63,12 @@ std::string getDate() {
   auto end = std::chrono::system_clock::now();
   std::time_t end_time = std::chrono::system_clock::to_time_t(end);
   std::string dateStr = std::ctime(&end_time);
-  dateStr.erase(dateStr.length() - 1);  // Удаляем символ новой строки
+  dateStr.erase(dateStr.length() - 1);
   return "[" + dateStr + "]";
 }
 
 void saveMessageToFile(const std::string& message, const std::string& chatID) {
-  std::ofstream outFile("Server/" + chatID + "_messages.txt", std::ios::app);  // Сохраняем историю для каждого чата
+  std::ofstream outFile(chatID + "_messages.txt", std::ios::app);
   if (outFile.is_open()) {
     outFile << message << std::endl;
     outFile.close();
@@ -75,7 +78,7 @@ void saveMessageToFile(const std::string& message, const std::string& chatID) {
 }
 
 void sendHistoryToClient(SOCKET clientSocket, const std::string& chatID) {
-  std::ifstream inFile("Server/" + chatID + "_messages.txt");
+  std::ifstream inFile(chatID + "_messages.txt");
   std::string line;
   if (inFile.is_open()) {
     while (getline(inFile, line)) {
@@ -89,14 +92,13 @@ void sendHistoryToClient(SOCKET clientSocket, const std::string& chatID) {
 }
 
 void saveChatToFile(const string& chatID) {
-  ofstream file("Server/Chats.txt", ios::app);
-  file << chatID + ": " + "Server/" + chatID + "_messages.txt" << endl;
+  ofstream file("Chats.txt", ios::app);
+  file << chatID + ": " + chatID + "_messages.txt" << endl;
   file.close();
 }
 
 void handleClient(SOCKET clientSocket) {
   char buffer[1024];
-  std::string chatID;
 
   while (true) {
     int bytesReceived = recv(clientSocket, buffer, sizeof(buffer), 0);
@@ -112,7 +114,7 @@ void handleClient(SOCKET clientSocket) {
     }
 
     std::string message = std::string(buffer, 0, bytesReceived);
-    if (message.find("/make") == string::npos && message.find("/join") == string::npos && message.find("/change") == string::npos && message.find("/rename") == string::npos) {  // Проверяем, начинается ли сообщение с "/"
+    if (message.find("/make") == string::npos && message.find("/join") == string::npos && message.find("/rename") == string::npos) {
       saveMessageToFile(getDate() + message, chatID);
     }
 
@@ -132,18 +134,17 @@ void handleClient(SOCKET clientSocket) {
           send(clientSocket, formedMess.c_str(), formedMess.size(), 0);
           continue;
         }
-        // saveChatToFile(chatID);
 
         std::lock_guard<std::mutex> lock(chatRoomsMutex);
         chatRooms[chatID].push_back(clientSocket);
-        [&chatID]() {
-          ofstream file("Server/IDES.txt", ios::app);
+        []() {
+          ofstream file("IDES.txt", ios::app);
           file << chatID << endl;
           file.close();
         }();
-        // saveChatToFile(chatID);
-        //  sendHistoryToClient(clientSocket, chatID);
+        saveChatToFile(chatID);
         continue;
+
       } else if (message.starts_with("/join ")) {
         std::string newChatID = message.substr(6);
         if (newChatID.empty() || chatRooms.find(newChatID) == chatRooms.end()) {
@@ -163,58 +164,59 @@ void handleClient(SOCKET clientSocket) {
           sendHistoryToClient(clientSocket, chatID);
         }
         continue;
-      } else if (message.starts_with("/change ")) {
-        string newID = message.substr(8);
-        {
-          lock_guard<mutex> lock(chatRoomsMutex);  // Блокируем доступ к chatRooms
-          if (chatRooms.find(newID) == chatRooms.end()) {
-            string mess = format("Chat with id {} doesn't exist", newID);
-            send(clientSocket, mess.c_str(), mess.size(), 0);
-            continue;  // Прерываем выполнение, если чата с таким ID нет
-          }
-          auto& clients = chatRooms[chatID];
-          clients.erase(std::remove(clients.begin(), clients.end(), clientSocket), clients.end());
-          chatRooms[newID].push_back(clientSocket);
-          chatID = newID;
-          string reciveMess = format("You have changed your chat room to {}", newID);
-          send(clientSocket, reciveMess.c_str(), reciveMess.size(), 0);
-        }
-        continue;
+
       } else if (message.starts_with("/rename ")) {
-        if (chatID.empty()) {
-          string mess = "You dont connect to any chat";
-          send(clientSocket, mess.c_str(), mess.size(), 0);
-          continue;
-        }
-
-        std::string newChatID = message.substr(8);
-        std::string oldName = "Server/" + chatID + "_messages.txt";
-        std::string newName = "Server/" + newChatID + "_messages.txt";
-
-        changeChatIDInFile(chatID, newChatID);
-        try {
-          std::filesystem::rename(oldName, newName);
-        } catch (const std::filesystem::filesystem_error& e) {
-          std::cout << e.what() << std::endl;
-        }
-
+        std::string newID = message.substr(8);
         {
           std::lock_guard<std::mutex> lock(chatRoomsMutex);
-          if (chatRooms.find(newChatID) == chatRooms.end()) {
-            chatRooms[newChatID] = {};
+          if (chatRooms.find(chatID) == chatRooms.end()) {
+            std::string mess = format("You are not in any chat room to rename");
+            send(clientSocket, mess.c_str(), mess.size(), 0);
+            continue;
+          }
+          if (chatRooms.find(newID) != chatRooms.end()) {
+            std::string mess = format("Chat with id {} already exists", newID);
+            send(clientSocket, mess.c_str(), mess.size(), 0);
+            continue;
           }
 
-          auto& oldSockets = chatRooms[chatID];
-          chatRooms[newChatID].insert(chatRooms[newChatID].end(), oldSockets.begin(), oldSockets.end());
-          oldSockets.clear();
+          // Переименовываем файл с сообщениями
+          std::string oldFileName = chatID + "_messages.txt";
+          std::string newFileName = newID + "_messages.txt";
+          if (rename(oldFileName.c_str(), newFileName.c_str()) != 0) {
+            std::string errorMess = format("Failed to rename the file to {}", newFileName);
+            send(clientSocket, errorMess.c_str(), errorMess.size(), 0);
+            continue;
+          }
+
+          auto clients = chatRooms[chatID];
+          for (SOCKET client : clients) {
+            if (client != clientSocket) {
+              std::string notification = format("Chat has been renamed to {}", newID);
+              send(client, notification.c_str(), notification.size(), 0);
+            }
+          }
+
           chatRooms.erase(chatID);
-          chatID = newChatID;
-          string mess = format("You have changed chat id to {}", newChatID);
-          send(clientSocket, mess.c_str(), mess.size(), 0);
+
+          chatRooms[newID] = clients;
+
+          chatID = newID;
+
+          std::string reciveMess = format("Chat ID has been changed to {}", newID);
+          send(clientSocket, reciveMess.c_str(), reciveMess.size(), 0);
+
+          for (SOCKET client : clients) {
+            if (client != clientSocket) {
+              std::string notification = format("You have been moved to the new chat: {}", newID);
+              send(client, notification.c_str(), notification.size(), 0);
+            }
+          }
         }
         continue;
       }
     }
+
     std::lock_guard<std::mutex> lock(chatRoomsMutex);
     for (SOCKET client : chatRooms[chatID]) {
       if (client != clientSocket) {
@@ -244,7 +246,7 @@ int main() {
   sockaddr_in serverAddr;
   serverAddr.sin_family = AF_INET;
   serverAddr.sin_port = htons(8080);
-  const char* ipAddress = ""; // Enter your IP
+  const char* ipAddress = "";  // Enter your IP
   if (inet_pton(AF_INET, ipAddress, &serverAddr.sin_addr) <= 0) {
     std::cerr << "Invalid address: " << ipAddress << std::endl;
     closesocket(serverSocket);
