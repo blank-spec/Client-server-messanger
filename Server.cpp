@@ -244,7 +244,7 @@ int main() {
   sockaddr_in serverAddr;
   serverAddr.sin_family = AF_INET;
   serverAddr.sin_port = htons(8080);
-  const char* ipAddress = "192.168.0.106";
+  const char* ipAddress = "" // Enter your IP;
   if (inet_pton(AF_INET, ipAddress, &serverAddr.sin_addr) <= 0) {
     std::cerr << "Invalid address: " << ipAddress << std::endl;
     closesocket(serverSocket);
