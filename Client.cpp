@@ -64,7 +64,7 @@ int main() {
   serverAddr.sin_family = AF_INET;
   serverAddr.sin_port = htons(8080);
 
-  const char* serverIp = "192.168.0.106";  // IP-адрес сервера
+  const char* serverIp = ""; // Enter servers IP
   if (inet_pton(AF_INET, serverIp, &serverAddr.sin_addr) <= 0) {
     std::cerr << "Invalid address: " << serverIp << std::endl;
     closesocket(clientSocket);
