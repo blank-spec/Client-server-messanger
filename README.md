@@ -15,6 +15,6 @@ Translated with DeepL.com (free version)
 
 ### Usage
 - Download header and cpp files
-- Compile Server.spp and Client.cpp
+- Compile Server.cpp and Client.cpp
 - Run .exe files, one server and clients as much as you want, client will be connect to server automatically.
 - If you want to know current chat's id, use command `/showid`
